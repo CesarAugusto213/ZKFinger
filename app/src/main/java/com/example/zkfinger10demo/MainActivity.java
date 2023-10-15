@@ -80,6 +80,7 @@ public class MainActivity extends AppCompatActivity {
     {
         byte[] bufids = new byte[256];
         int ret = ZKFingerService.identify(template, bufids, 70, 1);
+        /** Verifica si ya se registro la huella **/
         if (ret > 0)
         {
             String strRes[] = new String(bufids).split("\t");
@@ -88,6 +89,7 @@ public class MainActivity extends AppCompatActivity {
             enroll_index = 0;
             return;
         }
+        /** Verifica que las ultima huella y la ctual sean similares si no cancela el registro **/
         if (enroll_index > 0 && (ret = ZKFingerService.verify(regtemparray[enroll_index-1], template)) <= 0)
         {
             setResult("please press the same finger 3 times for the enrollment, cancel enroll, socre=" + ret);
@@ -95,23 +97,30 @@ public class MainActivity extends AppCompatActivity {
             enroll_index = 0;
             return;
         }
+        /** Guarda la huella actual en el arreglo temporal **/
         System.arraycopy(template, 0, regtemparray[enroll_index], 0, 2048);
+        /** Se aumenta el contador para saber cuantas huellas se han registrado **/
         enroll_index++;
+        /** Si es igual a 3 ya se debe registrar **/
         if (enroll_index == ENROLL_COUNT) {
+            /** Se reinicia el estado de registro y el contador **/
             bRegister = false;
             enroll_index = 0;
+
+            /** Se crea arreglo para guardar la fusion de los 3 registros **/
             byte[] regTemp = new byte[2048];
+
+            /** Si el merge tiene exito se continua con el registro **/
             if (0 < (ret = ZKFingerService.merge(regtemparray[0], regtemparray[1], regtemparray[2], regTemp))) {
                 int retVal = 0;
+                /** Guarda el registro de la huella en el dispositivo **/
                 retVal = ZKFingerService.save(regTemp, strUid);
+                /** Si tuvo exito **/
                 if (0 == retVal)
                 {
+                    /** Se convierte en cadena codificada **/
                     final String strFeature = Base64.encodeToString(regTemp, 0, ret, Base64.NO_WRAP);
-                    this.runOnUiThread(new Runnable() {
-                        public void run() {
-                            Toast.makeText(MainActivity.this, "StrUid: " + strUid + "StrFeature: " + strFeature, Toast.LENGTH_LONG).show();
-                        }
-                    });
+                    // Se guarda en servicio
                     setupRetrofit(strUid, strFeature);
                     setResult("enroll succ");
                 }
@@ -152,11 +161,6 @@ public class MainActivity extends AppCompatActivity {
 
     void doIdentify(byte[] template)
     {
-        this.runOnUiThread(new Runnable() {
-            public void run() {
-                Toast.makeText(MainActivity.this, "StrUid: " + strUid + "Ingrese", Toast.LENGTH_LONG).show();
-            }
-        });
         byte[] bufids = new byte[256];
         int ret = ZKFingerService.identify(template, bufids, 70, 1);
         if (ret > 0) {
@@ -167,10 +171,13 @@ public class MainActivity extends AppCompatActivity {
         }
     }
 
-
+    /** Escucha la captura de huellas **/
     private FingerprintCaptureListener fingerprintCaptureListener = new FingerprintCaptureListener() {
+
+        /** La captura tuvo exito **/
         @Override
         public void captureOK(byte[] fpImage) {
+            /** Convierte la imagen en bytes a bitmap en escala de grises **/
             final Bitmap bitmap = ToolUtils.renderCroppedGreyScaleBitmap(fpImage, fingerprintSensor.getImageWidth(), fingerprintSensor.getImageHeight());
             runOnUiThread(new Runnable() {
                 public void run() {
@@ -186,6 +193,7 @@ public class MainActivity extends AppCompatActivity {
 
         @Override
         public void extractOK(byte[] fpTemplate) {
+            /** Si se extrae con exito la imagen dependiendo del estado redirige a registro o identificar **/
             if (bRegister)
             {
                 doRegister(fpTemplate);
@@ -220,7 +228,7 @@ public class MainActivity extends AppCompatActivity {
     private ZKUSBManagerListener zkusbManagerListener = new ZKUSBManagerListener() {
         @Override
         public void onCheckPermission(int result) {
-            afterGetUsbPermission();
+            afterGetUsbPermission(); /**Se acepto**/
         }
 
         @Override
@@ -247,7 +255,7 @@ public class MainActivity extends AppCompatActivity {
     }
 
     /**
-     * storage permission
+     * Permisos al abrir la aplicacion
      */
     private void checkStoragePermission() {
         String[] permission = new String[]{
@@ -293,34 +301,41 @@ public class MainActivity extends AppCompatActivity {
         setContentView(R.layout.activity_main);
         dbFileName = getFilesDir().getAbsolutePath() + "/zkfinger10.db";
         initUI();
-        checkStoragePermission();
-        zkusbManager = new ZKUSBManager(this.getApplicationContext(), zkusbManagerListener);
+        checkStoragePermission(); /**El primer permission que se llama**/
+        zkusbManager = new ZKUSBManager(this.getApplicationContext(), zkusbManagerListener); /**Verifica si se acepto los permisos**/
         zkusbManager.registerUSBPermissionReceiver();
     }
 
+    /**Inicia el lector de huellas**/
     private void createFingerprintSensor()
     {
+        /** Si ya existe la intancia se destruye **/
         if (null != fingerprintSensor)
         {
             FingprintFactory.destroy(fingerprintSensor);
             fingerprintSensor = null;
         }
-        // Define output log level
+
+        /** Log's **/
         LogHelper.setLevel(Log.VERBOSE);
         LogHelper.setNDKLogLevel(Log.ASSERT);
-        // Start fingerprint sensor
-        Map deviceParams = new HashMap();
-        //set vid
-        deviceParams.put(ParameterHelper.PARAM_KEY_VID, usb_vid);
-        //set pid
-        deviceParams.put(ParameterHelper.PARAM_KEY_PID, usb_pid);
+
+        Map deviceParams = new HashMap(); /**Se configura los parametros del lector**/
+
+        deviceParams.put(ParameterHelper.PARAM_KEY_VID, usb_vid);/**ID del vendedor**/
+        deviceParams.put(ParameterHelper.PARAM_KEY_PID, usb_pid);/**ID del producto**/
+        /** Se crea la instancia del sensor de huellas **/
         fingerprintSensor = FingprintFactory.createFingerprintSensor(getApplicationContext(), TransportType.USB, deviceParams);
     }
 
+    /** Busac el dispositivo lecto de huellas **/
     private boolean enumSensor()
     {
+        /** Se crea el usb manager para buscar loss dispositivos conectados **/
         UsbManager usbManager = (UsbManager)this.getSystemService(Context.USB_SERVICE);
+        /** Se recorre los dispositivos conectados **/
         for (UsbDevice device : usbManager.getDeviceList().values()) {
+            /** Se busca el que corresponda con el lector de huellas**/
             int device_vid = device.getVendorId();
             int device_pid = device.getProductId();
             if (device_vid == ZKTECO_VID && (device_pid == LIVE20R_PID || device_pid == LIVE10R_PID))
@@ -332,7 +347,7 @@ public class MainActivity extends AppCompatActivity {
         return false;
     }
 
-
+    /**Permisos para usb**/
     private void tryGetUSBPermission() {
         zkusbManager.initUSBPermission(usb_vid, usb_pid);
     }
@@ -344,21 +359,26 @@ public class MainActivity extends AppCompatActivity {
 
     private void openDevice()
     {
-        createFingerprintSensor();
+        createFingerprintSensor(); /** Inicia el lector **/
         bRegister = false;
         enroll_index = 0;
         isReseted = false;
         try {
             //fingerprintSensor.setCaptureMode(1);
-            fingerprintSensor.open(deviceIndex);
-            //load all templates form db
+            fingerprintSensor.open(deviceIndex); /** El dispositivo esta listo para usarse **/
+
+            /** Abre la base de datos verifica si hay registros **/
             if (dbManager.opendb(dbFileName) && dbManager.getCount() > 0)
             {
+                /** Se obtiene la lista de registros **/
                 HashMap<String, String> vUserList;
                 vUserList = dbManager.queryUserList();
                 int ret = 0;
+
+                /** Si hay registros se guarda para en el Dispositivo **/
                 if (vUserList.size() > 0)
                 {
+                    /** Se realiza un foreach para grabar los registros en el metodo save() del service **/
                     for (Map.Entry<String, String> entry : vUserList.entrySet()) {
                         String strID = entry.getKey();
                         String strFeature = entry.getValue();
@@ -372,7 +392,7 @@ public class MainActivity extends AppCompatActivity {
                 }
             }
             {
-                // device parameter
+                /** Log's **/
                 LogHelper.d("sdk version" + fingerprintSensor.getSDK_Version());
                 LogHelper.d("firmware version" + fingerprintSensor.getFirmwareVersion());
                 LogHelper.d("serial:" + fingerprintSensor.getStrSerialNumber());
@@ -385,7 +405,7 @@ public class MainActivity extends AppCompatActivity {
             textView.setText("connect success!");
         } catch (FingerprintException e) {
             e.printStackTrace();
-            // try to  reboot the sensor
+            /** En caso de error intenta reiniciar el sensor **/
             try {
                 fingerprintSensor.openAndReboot(deviceIndex);
             } catch (FingerprintException ex) {
@@ -421,7 +441,7 @@ public class MainActivity extends AppCompatActivity {
             textView.setText("Device not found!");
             return;
         }
-        tryGetUSBPermission();
+        tryGetUSBPermission(); /**Solicita permiso para usb**/
     }
 
     public void onBnStop(View view)
@@ -478,6 +498,7 @@ public class MainActivity extends AppCompatActivity {
         });
     }
 
+    /**
     public void onBnDelete(View view)
     {
         if (bStarted) {
@@ -510,8 +531,8 @@ public class MainActivity extends AppCompatActivity {
                         }
                     }).show();
         }
-    }
-
+    }**/
+    /**
     public void onBnClear(View view)
     {
         if (bStarted) {
@@ -537,8 +558,7 @@ public class MainActivity extends AppCompatActivity {
                     })
                     .show();
         }
-    }
-
+    }**/
     @Override
     protected void onDestroy() {
         super.onDestroy();
